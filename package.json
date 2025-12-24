@@ -1,0 +1,19 @@
+{
+  "name": "trench-vc",
+  "version": "1.0.0",
+  "description": "Trench VC - Memey voice chat where everyone joins one big call",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["voice", "chat", "webrtc", "vc"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.14.2",
+    "uuid": "^9.0.1"
+  }
+}
+
