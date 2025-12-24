@@ -2,10 +2,8 @@
   "name": "trench-vc",
   "version": "1.0.0",
   "description": "Trench VC - Memey voice chat frontend",
-  "main": "index.html",
   "scripts": {
-    "start": "echo 'Frontend files - deploy to Vercel'",
-    "dev": "echo 'Frontend files - deploy to Vercel'"
+    "build": "echo 'Static site - no build needed'"
   },
   "keywords": ["voice", "chat", "webrtc", "vc"],
   "author": "",
