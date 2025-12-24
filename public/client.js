@@ -46,8 +46,11 @@ class TrenchVC {
     }
     
     connectWebSocket() {
+        // For Vercel deployment, you'll need to use a separate WebSocket server
+        // Update this URL to point to your Railway/Render WebSocket server
+        const wsServer = process.env.WS_SERVER || window.location.host;
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}`;
+        const wsUrl = `${protocol}//${wsServer}`;
         
         this.ws = new WebSocket(wsUrl);
         
