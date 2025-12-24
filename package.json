@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "build": "echo 'No build step needed for static files'"
   },
   "keywords": ["voice", "chat", "webrtc", "vc"],
   "author": "",
@@ -16,4 +17,3 @@
     "uuid": "^9.0.1"
   }
 }
-
