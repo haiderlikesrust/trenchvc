@@ -3,4 +3,10 @@ server.js
 .git
 .env
 *.log
-
+public/
+api/
+DEPLOY.md
+DEPLOYMENT_GUIDE.md
+VERCEL_WEBSOCKET_OPTIONS.md
+WHAT_TO_DEPLOY.md
+README.md
