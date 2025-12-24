@@ -674,11 +674,12 @@ class TrenchVC {
         participantCard.className = 'participant-card';
         participantCard.id = `participant-${peerId}`;
         participantCard.innerHTML = `
+            <div class="voice-reactive-ring"></div>
             <div class="participant-avatar ${colorClass}">
                 ${initials}
             </div>
             <div class="participant-name">${userName}</div>
-            <div class="participant-status">Connected</div>
+            <div class="participant-status idle" id="status-${peerId}">Idle</div>
             <div class="status-icons">
                 <div class="status-icon" title="No video">📹</div>
             </div>
@@ -686,11 +687,20 @@ class TrenchVC {
         
         participantsGrid.appendChild(participantCard);
         
+        // Hide empty state if participants exist
+        if (this.peers.size > 0 && document.getElementById('emptyState')) {
+            document.getElementById('emptyState').style.display = 'none';
+        }
+        
         // Monitor remote audio for speaking detection
         const remoteStream = this.remoteStreams.get(peerId);
         if (remoteStream) {
             this.monitorRemoteSpeaking(peerId, remoteStream);
         }
+        
+        // Play subtle join animation
+        participantCard.style.animation = 'cardSlideIn 0.4s ease';
+        this.updateGhostSlots();
     }
     
     monitorRemoteSpeaking(peerId, stream) {
@@ -701,20 +711,46 @@ class TrenchVC {
         const source = this.audioContext.createMediaStreamSource(stream);
         const analyser = this.audioContext.createAnalyser();
         analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.3;
         source.connect(analyser);
         
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const timeData = new Uint8Array(analyser.frequencyBinCount);
         
         const checkSpeaking = () => {
-            analyser.getByteFrequencyData(dataArray);
-            const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+            analyser.getByteTimeDomainData(timeData);
+            
+            let sum = 0;
+            for (let i = 0; i < timeData.length; i++) {
+                const normalized = (timeData[i] - 128) / 128;
+                sum += Math.abs(normalized);
+            }
+            const average = sum / timeData.length;
+            const level = average * 100;
+            
+            this.speakingLevels.set(peerId, level);
             
             const participant = document.getElementById(`participant-${peerId}`);
+            const statusEl = document.getElementById(`status-${peerId}`);
+            
             if (participant) {
-                if (average > 30) {
+                if (level > 5) {
                     participant.classList.add('speaking');
+                    if (statusEl) {
+                        statusEl.textContent = 'Talking...';
+                        statusEl.className = 'participant-status talking';
+                    }
+                    this.activeSpeakerId = peerId;
+                    this.updateActiveSpeakerViz(peerId);
                 } else {
                     participant.classList.remove('speaking');
+                    if (statusEl) {
+                        statusEl.textContent = 'Idle';
+                        statusEl.className = 'participant-status idle';
+                    }
+                    if (this.activeSpeakerId === peerId) {
+                        this.activeSpeakerId = null;
+                        this.updateActiveSpeakerViz(null);
+                    }
                 }
             }
             
@@ -726,16 +762,69 @@ class TrenchVC {
         checkSpeaking();
     }
     
+    updateActiveSpeakerViz(peerId) {
+        const viz = document.getElementById('activeSpeakerViz');
+        if (!viz) return;
+        
+        if (peerId) {
+            const participant = document.getElementById(`participant-${peerId}`);
+            const nameEl = document.getElementById('activeSpeakerName');
+            if (participant && nameEl) {
+                const name = participant.querySelector('.participant-name').textContent;
+                nameEl.textContent = name;
+                viz.style.display = 'block';
+                this.animateWaveform();
+            }
+        } else {
+            viz.style.display = 'none';
+        }
+    }
+    
+    animateWaveform() {
+        const bars = document.querySelectorAll('.wave-bar');
+        const level = this.speakingLevels.get(this.activeSpeakerId) || 0;
+        
+        bars.forEach((bar, index) => {
+            const height = 20 + (level * 0.6) + Math.sin(Date.now() / 100 + index) * 20;
+            bar.style.height = `${Math.max(10, Math.min(100, height))}px`;
+        });
+        
+        if (this.activeSpeakerId) {
+            requestAnimationFrame(() => this.animateWaveform());
+        }
+    }
+    
     removeParticipant(peerId) {
         const participant = document.getElementById(`participant-${peerId}`);
         if (participant) {
-            participant.remove();
+            // Animate out
+            participant.style.animation = 'cardSlideOut 0.3s ease';
+            setTimeout(() => {
+                participant.remove();
+                this.updateGhostSlots();
+            }, 300);
+        }
+        
+        if (this.activeSpeakerId === peerId) {
+            this.activeSpeakerId = null;
+            this.updateActiveSpeakerViz(null);
         }
     }
     
     updatePeopleCount() {
         const count = this.peers.size + 1; // +1 for yourself
         document.getElementById('peopleCount').textContent = count;
+        this.updateGhostSlots();
+        
+        // Show/hide empty state
+        const emptyState = document.getElementById('emptyState');
+        if (emptyState) {
+            if (count === 1) {
+                emptyState.style.display = 'block';
+            } else {
+                emptyState.style.display = 'none';
+            }
+        }
     }
     
     updateStatus(text, connected) {
@@ -777,19 +866,50 @@ class TrenchVC {
         });
         
         const qualityEl = document.getElementById('connectionQuality');
+        const voiceQualityEl = document.getElementById('voiceQualityText');
+        const voiceQualityIcon = document.getElementById('voiceQualityIcon');
+        
+        let quality = 'excellent';
+        let qualityText = 'Excellent';
+        let qualityIcon = '🔥';
+        
         if (excellent === this.peers.size) {
-            qualityEl.textContent = 'Excellent';
-            qualityEl.className = 'info-value connection-quality excellent';
+            quality = 'excellent';
+            qualityText = 'Excellent';
+            qualityIcon = '🔥';
         } else if (good > 0 && poor === 0) {
-            qualityEl.textContent = 'Good';
-            qualityEl.className = 'info-value connection-quality good';
+            quality = 'good';
+            qualityText = 'Good';
+            qualityIcon = '🔥';
         } else if (fair > 0 || poor < this.peers.size / 2) {
-            qualityEl.textContent = 'Fair';
-            qualityEl.className = 'info-value connection-quality fair';
+            quality = 'fair';
+            qualityText = 'Fair';
+            qualityIcon = '⚠️';
         } else {
-            qualityEl.textContent = 'Poor';
-            qualityEl.className = 'info-value connection-quality poor';
+            quality = 'poor';
+            qualityText = 'Poor';
+            qualityIcon = '⚠️';
         }
+        
+        qualityEl.textContent = qualityText;
+        qualityEl.className = `info-value connection-quality ${quality}`;
+        
+        if (voiceQualityEl) voiceQualityEl.textContent = qualityText;
+        if (voiceQualityIcon) voiceQualityIcon.textContent = qualityIcon;
+    }
+    
+    copyInviteLink() {
+        const url = window.location.href;
+        navigator.clipboard.writeText(url).then(() => {
+            const btn = document.getElementById('inviteBtn');
+            const originalTitle = btn.title;
+            btn.title = 'Copied!';
+            setTimeout(() => {
+                btn.title = originalTitle;
+            }, 2000);
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+        });
     }
     
     monitorConnectionQuality() {
@@ -941,9 +1061,49 @@ class TrenchVC {
             this.applyAudioConstraints();
         });
         
-        // Leave button
-        document.getElementById('leaveBtn').addEventListener('click', () => {
-            this.leave();
+        // Invite button
+        document.getElementById('inviteBtn').addEventListener('click', () => {
+            this.copyInviteLink();
+        });
+        
+        // Leave button with confirmation
+        const leaveBtn = document.getElementById('leaveBtn');
+        leaveBtn.addEventListener('mouseenter', () => {
+            if (this.leaveConfirmTimeout) {
+                clearTimeout(this.leaveConfirmTimeout);
+            }
+            this.leaveConfirmTimeout = setTimeout(() => {
+                leaveBtn.classList.add('confirming');
+                leaveBtn.querySelector('span').textContent = 'Confirm Leave';
+            }, 2000);
+        });
+        
+        leaveBtn.addEventListener('mouseleave', () => {
+            if (this.leaveConfirmTimeout) {
+                clearTimeout(this.leaveConfirmTimeout);
+                this.leaveConfirmTimeout = null;
+            }
+            leaveBtn.classList.remove('confirming');
+            leaveBtn.querySelector('span').textContent = 'Leave';
+        });
+        
+        leaveBtn.addEventListener('click', () => {
+            if (leaveBtn.classList.contains('confirming')) {
+                this.leave();
+            } else {
+                leaveBtn.classList.add('confirming');
+                leaveBtn.querySelector('span').textContent = 'Confirm Leave';
+                setTimeout(() => {
+                    leaveBtn.classList.remove('confirming');
+                    leaveBtn.querySelector('span').textContent = 'Leave';
+                }, 3000);
+            }
+        });
+        
+        // Expand settings button
+        document.getElementById('expandSettingsBtn').addEventListener('click', () => {
+            const modal = document.getElementById('settingsModal');
+            modal.style.display = modal.style.display === 'none' ? 'flex' : 'none';
         });
     }
     
@@ -986,13 +1146,22 @@ class TrenchVC {
         
         const muteBtn = document.getElementById('muteBtn');
         const btnText = muteBtn.querySelector('span');
+        const statusEl = document.getElementById('local-status');
         
         if (this.isMuted) {
             btnText.textContent = 'Unmute';
             muteBtn.classList.add('muted');
+            if (statusEl) {
+                statusEl.textContent = 'Muted';
+                statusEl.className = 'participant-status muted';
+            }
         } else {
             btnText.textContent = 'Mute';
             muteBtn.classList.remove('muted');
+            if (statusEl) {
+                statusEl.textContent = 'Idle';
+                statusEl.className = 'participant-status idle';
+            }
         }
         
         // Update local participant status icon
